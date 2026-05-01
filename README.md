@@ -1,6 +1,6 @@
 # CI453 ATM Project
 
-##NOTES
+## NOTES
   - Added version 2 (updated + fixed some bugs
 
 
