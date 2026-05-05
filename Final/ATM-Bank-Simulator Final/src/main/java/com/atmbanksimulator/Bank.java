@@ -1,0 +1,206 @@
+package com.atmbanksimulator;
+
+// ===== 📚🌐Bank (Domain / Service / Business Logic) =====
+
+// Bank class: a simple implementation of a bank, containing a list of bank accounts
+// and has a currently logged-in account (loggedInAccount).
+public class Bank {
+
+    // Instance variables storing bank information
+    private int maxAccounts = 10;                       // Maximum number of accounts the bank can hold
+    private int numAccounts = 0;                        // Current number of accounts in the bank
+    private BankAccount[] accounts = new BankAccount[maxAccounts];  // Array to hold BankAccount objects
+    private BankAccount loggedInAccount = null;         // Currently logged-in account ('null' if no one is logged in)
+
+    // a method to create new BankAccount - this is known as a 'factory method' and is a more
+    // flexible way to do it than just using the 'new' keyword directly.
+    public BankAccount makeBankAccount(String accNumber, String accPasswd, int balance) {
+        return new BankAccount(accNumber, accPasswd, balance);
+    }
+
+    // a method to add a new bank account to the bank - it returns true if it succeeds
+    // or false if it fails (because the bank is 'full')
+    public boolean addBankAccount(BankAccount a) {
+        if (numAccounts < maxAccounts) {
+            accounts[numAccounts] = a;
+            numAccounts++ ;
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    // Variant of addBankAccount: creates a BankAccount and adds it in one step.
+    // This is an example of method overloading: two methods can share the same name
+    // if they have different parameter lists.
+    public boolean addBankAccount(String accNumber, String accPasswd, int balance) {
+        return addBankAccount(makeBankAccount(accNumber, accPasswd, balance));
+    }
+
+    // Check whether the given accountNumber and password match an existing BankAccount.
+    // If successful, set 'loggedInAccount' to that account and return true.
+    // Otherwise, set 'loggedInAccount' to null and return false.
+    public boolean login(String accountNumber, String password) {
+        logout(); // logout of any previous loggedInAccount
+
+        // Search the accounts array to find a BankAccount with a matching accountNumber and password.
+        // - If found, set 'loggedInAccount' to that account and return true.
+        // - If not found, reset 'loggedInAccount' to null and return false.
+        for (BankAccount b: accounts) {
+            if (b != null && b.getAccNumber().equals(accountNumber)) {
+
+                // Check if locked
+                if (b.isLocked()) {
+                    return false;
+                }
+
+                // Check password
+                if (b.getaccPasswd().equals(password)) {
+                    b.resetLoginAttempts();
+                    loggedInAccount = b;
+                    return true;
+                } else {
+                    b.recordFailedAttempt();
+                    return false;
+                }
+            }
+        }
+        return false;
+    }
+
+    // --- Added: look up an account by number without logging in ---
+    // Used by UIModel to check if an account exists and whether it's locked
+    // before attempting a login, user used to have to log in then enter password
+    // to see if account was blocked or not
+    public BankAccount getAccount(String accNumber) {
+        for (BankAccount b : accounts) {
+            if (b != null && b.getAccNumber().equals(accNumber)) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    // Log out of the currently logged-in account, if any
+    public void logout() {
+        if (loggedIn()) {
+            loggedInAccount = null;
+        }
+    }
+
+    // Check whether the bank currently has a logged-in account
+    public boolean loggedIn() {
+        if (loggedInAccount == null) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    // Attempt to deposit money into the currently logged-in account
+    // by calling the deposit method of the BankAccount object
+    public boolean deposit(int amount)
+    {
+        if (loggedIn()) {
+            return loggedInAccount.deposit(amount);
+        } else {
+            return false;
+        }
+    }
+
+
+    // Attempt to withdraw money from the currently logged-in account
+    // by calling the withdraw method of the BankAccount object
+    public boolean withdraw(int amount)
+    {
+        if (loggedIn()) {
+            return loggedInAccount.withdraw(amount);
+        } else {
+            return false;
+        }
+    }
+
+    // get the currently logged-in account balance
+    // by calling the getBalance method of the BankAccount object
+    public int getBalance()
+    {
+        if (loggedIn()) {
+            return loggedInAccount.getBalance();
+        } else {
+            return -1; // use -1 as an indicator of an error
+        }
+    }
+    // --- Added: helper to check if an account number is already registered ---
+    // Used in ceateAccount() to prevent duplicate account numbers from being used
+    public boolean accountExists(String accNumber) {
+        for (BankAccount b : accounts) {
+            if (b != null && b.getAccNumber().equals(accNumber)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // --- Added: create new account of chosen type ---
+    // The "type" string decides which subclass gets created.
+    // This is how the "create account" feature routes to StudentAccount, PrimeAccount and SavingsAccount
+    // Returns false if the account number already is in use
+    public  boolean createAccount(String accNumber, String password, String type) {
+
+        // Prevents duplicate account numbers
+        if (accountExists(accNumber)) {
+            return false;
+        }
+
+        BankAccount newAccount;
+
+        // Choose account type
+        if (type.equals("student")) {
+            newAccount = new StudentAccount(accNumber, password, 0);
+        } else if (type.equals("prime")) {
+            newAccount = new PrimeAccount(accNumber, password, 0);
+        } else if (type.equals("savings")) {
+            newAccount = new SavingsAccount(accNumber, password, 0);
+        } else {
+            // Default account
+            newAccount = new BankAccount(accNumber, password, 0);
+        }
+
+        return addBankAccount(newAccount);
+    }
+
+    // Returns the currently logged in account
+    // Used so the UI can access extra info such as error messages
+    public BankAccount getLoggedInAccount() {
+        return loggedInAccount;
+    }
+
+    // --- Added: simulate new banking day ---
+    // Added the "Day" button, it loops through all accounts and:
+    //      - resets the overdraft used (PrimeAccount)
+    //      - applies daily interest to balance (SavingsAccount)
+    //      - resets daily withdrawl amount (StudentAccount)
+    //      - unlocks accounts and clears failed login attempts (all accounts)
+    // "instanceof" checks what type an account is at runtime,
+    // which allows us to safely call class-specific methods
+    public void nextDay() {
+        for (BankAccount acc : accounts) {
+
+            if (acc instanceof PrimeAccount) {
+                ((PrimeAccount) acc).resetOverdraft();
+            }
+
+            if (acc instanceof SavingsAccount) {
+                ((SavingsAccount) acc).applyInterest();
+            }
+
+            if (acc instanceof StudentAccount) {
+                ((StudentAccount) acc).resetDailyLimit();
+            }
+
+            if (acc != null) {
+                acc.resetLoginAttempts();
+            }
+        }
+    }
+}
